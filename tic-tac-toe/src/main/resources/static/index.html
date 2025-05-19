@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Tic Tac Toe</title>
+    <script src="/webjars/sockjs-client/1.5.1/sockjs.min.js"></script>
+    <script src="/webjars/stomp-websocket/2.3.4/stomp.min.js"></script>
+    <style>
+        #board {
+            display: grid;
+            grid-template-columns: repeat(3, 100px);
+            gap: 5px;
+            margin-top: 20px;
+        }
+        .cell {
+            width: 100px;
+            height: 100px;
+            font-size: 36px;
+            text-align: center;
+            line-height: 100px;
+            border: 1px solid #000;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Tic Tac Toe</h1>
+
+    <div>
+        <p><strong>Game:</strong> <span id="gameState">Ongoing...</span></p>
+        <p><strong>Player 1 (X):</strong> <span id="player1">Waiting...</span></p>
+        <p><strong>Player 2 (O):</strong> <span id="player2">Waiting...</span></p>
+        <p><strong>Current Turn:</strong> <span id="turn">Waiting...</span></p>
+    </div>
+
+    <div id="board"></div>
+
+    <script>
+        const playerName = prompt("Enter your name:");
+        let playerSymbol = null;
+
+        const socket = new SockJS('/ws');
+        const stompClient = Stomp.over(socket);
+
+        stompClient.connect({}, function () {
+            // Receive player updates
+            stompClient.subscribe("/topic/players", function (message) {
+                const data = JSON.parse(message.body);
+                console.log("Received players:", data);
+                document.getElementById("player1").textContent = data[0]?.name || "Waiting...";
+                document.getElementById("player2").textContent = data[1]?.name || "Waiting...";
+
+                if (data.yourName === playerName) {
+                    playerSymbol = data.yourSymbol;
+                }
+            });
+
+            // Receive Turn updates
+            stompClient.subscribe("/topic/turn", function (message){
+                const data = JSON.parse(message.body);
+                console.log("Received turn:", data);
+                document.getElementById("turn").textContent = data?.name || "Waiting...";
+            });
+
+            // Receive Board updates
+            stompClient.subscribe("/topic/boardState", function(message){
+                const data = JSON.parse(message.body);
+                console.log("Received Board State:", data);
+                updateBoard(data);
+            });
+
+            // Receive GameOver update
+            stompClient.subscribe("/topic/gameOver", function(message){
+                const data = JSON.parse(message.body);
+                console.log("Received GameOver State:", data);
+                if(data.state == "Win"){
+                     document.getElementById("gameState").textContent = "Game won by " + data.winner.name;
+                     alert("Game won by " + data.winner.name);
+                }
+                else{
+                    document.getElementById("gameState").textContent = "Game Draw";
+                    alert("Game Draw");
+                }
+            });
+
+            // Send join event
+            stompClient.send("/app/join", {}, playerName);
+        });
+
+        const board = document.getElementById("board");
+        for (let i = 0; i < 9; i++) {
+            const cell = document.createElement("div");
+            cell.classList.add("cell");
+            cell.dataset.index = i;
+            
+            cell.onclick = function() {
+                console.log("Cell clicked at index: " + i);
+                stompClient.send("/app/endTurn", {}, JSON.stringify({ playerName: playerName, index: i }));
+            }
+
+            board.appendChild(cell);
+        }
+
+
+        function updateBoard(boardState) {
+        const cells = document.querySelectorAll(".cell");
+
+        cells.forEach((cell, index) => {
+            const symbol = boardState[index];
+
+            cell.textContent = symbol == '-' ? "" : symbol;
+            if (symbol != '-') {
+                cell.classList.add("disabled");
+                cell.onclick = null;
+            }
+        });
+    }
+
+    </script>
+</body>
+</html>
